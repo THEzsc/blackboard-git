@@ -8,6 +8,8 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 from blackboard_remote import exporter_script
 from chromium_fetcher import fetch, launch_context
+from finalize_export import parse_announcements
+from test_announcements import EMPTY
 
 
 @unittest.skipUnless(os.environ.get('BLACKBOARD_BROWSER_TESTS')=='1', 'Set BLACKBOARD_BROWSER_TESTS=1 for real-browser tests')
@@ -35,7 +37,7 @@ class ChromiumIntegration(unittest.TestCase):
                         value={'name':'Synthetic course'}
                     else:
                         observed.append(request.request.headers.get('cookie',''))
-                        body='<html><body><ul id="announcementList"><li><h3>Test announcement</h3></li></ul></body></html>'
+                        body=EMPTY if attempt == 1 else '<html><body><ul id="announcementList"><li><h3>Test announcement</h3></li></ul></body></html>'
                         request.fulfill(status=200,content_type='text/html',headers={'Set-Cookie':'fixture_session=retained; Max-Age=3600; Secure; HttpOnly; Path=/'},body=body);return
                     request.fulfill(status=200,content_type='application/json',body=json.dumps(value))
                 context.route('**/*',route)
@@ -47,6 +49,9 @@ class ChromiumIntegration(unittest.TestCase):
                     fetch(url,Path(tmp)/str(attempt),'_1234_1',exporter_script(),cache)
                 manifest=json.loads((Path(tmp)/str(attempt)/'manifest.json').read_text(encoding='utf-8'))
                 self.assertTrue(manifest['complete']);self.assertEqual(1,len(manifest['assets']))
-                if attempt==1:self.assertIn('fixture_session=retained',observed[start])
+                if attempt==1:
+                    self.assertIn('fixture_session=retained',observed[start])
+                    announcement=(Path(tmp)/str(attempt)/'announcements-source.html').read_text(encoding='utf-8')
+                    self.assertEqual([],parse_announcements(announcement,'_1234_1').children)
 
 if __name__=='__main__':unittest.main()

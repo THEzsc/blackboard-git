@@ -39,13 +39,28 @@ def exporter_script():
       const r = await request(`${origin}/webapps/blackboard/execute/announcement?method=search&context=mybb&course_id=${courseId}&viewChoice=2`);
       const announcementHTML = await r.text();
       const doc = new DOMParser().parseFromString(announcementHTML, 'text/html');
-      if (!doc.getElementById('announcementList')) throw Error('Announcement list unavailable');
+      if (!doc.getElementById('announcementList')) {
+        const container = doc.getElementById('containerdiv');
+        const form = container?.querySelector('form#announcementForm');
+        const correctCourse = form?.querySelector('input[name="course_id"]')?.value === courseId;
+        const courseView = form?.querySelector('input[name="viewChoice"]')?.value === '2';
+        const remainder = container?.cloneNode(true);
+        remainder?.querySelectorAll('script,style,link,form#announcementForm,h2.hideoff').forEach(el=>el.remove());
+        // Original renders an empty course announcement page as only its filter form.
+        // Do not treat login, permission errors or an unknown layout as an empty list.
+        if (!correctCourse || !courseView || !remainder || remainder.textContent.trim() || remainder.children.length) {
+          throw Error('Announcement list unavailable (unrecognized or inaccessible page)');
+        }
+      }
       add('announcements-source.html', announcementHTML);
     } catch(e) { note('announcements', courseId, e.message); }
     manifest.complete=!issues.length;''')
     marker='    // ZIP store format:'
     assert marker in script
-    bridge='''    for (const file of files) {
+    bridge='''    for (const issue of issues) {
+      window.webkit.messageHandlers.blackboardExport.postMessage({kind:'progress',text:`Export issue [${issue.stage}] ${issue.id}: ${issue.message}`});
+    }
+    for (const file of files) {
       let binary = '';
       for (let i=0;i<file.data.length;i+=32768) binary += String.fromCharCode(...file.data.subarray(i,i+32768));
       window.webkit.messageHandlers.blackboardExport.postMessage({kind:'file',path:file.path,base64:btoa(binary)});
@@ -76,7 +91,14 @@ def refresh(raw):
                 script=Path(tmp)/'export.js'; script.write_text(exporter_script(), encoding='utf-8')
                 # The application has its own persistent WKWebsiteDataStore; no cookie extraction.
                 if backend() == 'webkit':
-                    subprocess.run([str(app),url,str(snapshot),course,str(script)],check=True,stdout=sys.stderr,timeout=920)
+                    result = subprocess.run([str(app),url,str(snapshot),course,str(script)],stdout=sys.stderr,timeout=920)
+                    if result.returncode:
+                        manifest = snapshot/'manifest.json'
+                        if manifest.exists():
+                            issues = json.loads(manifest.read_text(encoding='utf-8')).get('issues', [])
+                            if issues:
+                                raise RuntimeError('Export incomplete: ' + '; '.join(f"{i['stage']} / {i['id']}: {i['message']}" for i in issues))
+                        raise RuntimeError(f'Browser export stopped (exit {result.returncode}); no course update was committed')
                 else:
                     from chromium_fetcher import fetch
                     fetch(url,snapshot,course,script.read_text(encoding='utf-8'),CACHE)

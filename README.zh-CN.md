@@ -103,3 +103,8 @@ git config --global --unset-all 'url.blackboard::https://learn.intl.zju.edu.cn/.
 这不会删除课程资料或 Git 历史。移除规则后仍可使用 `blackboard::https://…` 格式；完整卸载 helper 时删除 `~/.local/bin/git-remote-blackboard` 启动器。开发环境变量及组件说明见英文文档。
 
 blackboard-git 是独立项目，与 Blackboard、Anthology 或浙江大学无隶属关系。
+
+## 常见问题
+
+- `Incomplete export`：终端现在会显示具体阶段、条目 ID 和原因。没有公告的已识别课程页面可正常同步；登录页、权限错误、未知公告页面和附件下载失败仍会阻止不完整提交。
+- `不是 Git 仓库`：`git clone URL` 默认新建子目录，不会把当前目录直接变成仓库。建议明确目标：`git clone '课程链接' MyCourse`，完成后 `cd MyCourse` 再 `git pull`。只有当前目录为空时，才可用 `git clone '课程链接' .`；不要删除已有资料来腾空目录。

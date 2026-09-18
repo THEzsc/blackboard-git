@@ -139,3 +139,8 @@ git config --global --unset-all 'url.blackboard::https://learn.intl.zju.edu.cn/.
 This leaves your course files and history intact. Explicit `blackboard::https://…` URLs still use the helper while it is installed. To fully uninstall the helper, remove its launcher from `~/.local/bin`.
 
 blackboard-git is an independent project, not affiliated with Blackboard, Anthology or Zhejiang University.
+
+## Troubleshooting
+
+- **Incomplete export:** the terminal reports the failing stage, item ID and reason. Recognized empty announcement views are valid; login, permission errors, unknown layouts and failed attachments still block incomplete commits.
+- **Not a Git repository:** `git clone URL` creates a child directory by default. Specify the destination (`git clone 'COURSE_URL' MyCourse`), then enter it before pulling. `git clone 'COURSE_URL' .` requires an empty current directory; preserve any existing personal materials.

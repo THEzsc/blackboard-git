@@ -31,10 +31,24 @@ def clean(n):
   return '<'+n.tag+'>'+body+('' if n.tag=='br' else '</'+n.tag+'>')
  return body
 
-def finalize(folder,source,output):
- p=Path(folder);m=json.loads((p/'manifest.json').read_text(encoding='utf-8'));parser=Parser();parser.feed(Path(source).read_text(encoding='utf-8'))
+def parse_announcements(source, course_id):
+ parser=Parser();parser.feed(source)
  target=next((n for n in walk(parser.root) if n.attrs.get('id')=='announcementList'),None)
- if target is None:raise ValueError('Missing announcement list; cannot label snapshot successful')
+ if target is not None:return target
+ container=next((n for n in walk(parser.root) if n.attrs.get('id')=='containerdiv'),None)
+ form=next((n for n in walk(container) if n.tag=='form' and n.attrs.get('id')=='announcementForm'),None)
+ fields={n.attrs.get('name'):n.attrs.get('value') for n in walk(form) if n.tag=='input'}
+ if fields.get('course_id')!=course_id or fields.get('viewChoice')!='2':
+  raise ValueError('Missing announcement list; page is not a recognized course announcement view')
+ for n in container.children:
+  if isinstance(n,str) and not n.strip():continue
+  if isinstance(n,Node) and (n.tag in {'script','style','link'} or n is form or (n.tag=='h2' and 'hideoff' in n.attrs.get('class','').split())):continue
+  raise ValueError('Missing announcement list; unexpected visible content on page')
+ return Node('ul', [('id','announcementList')])
+
+def finalize(folder,source,output):
+ p=Path(folder);m=json.loads((p/'manifest.json').read_text(encoding='utf-8'))
+ target=parse_announcements(Path(source).read_text(encoding='utf-8'),m['courseId'])
  entries=[n for n in target.children if isinstance(n,Node) and n.tag=='li']
  index=(p/'index.html').read_text(encoding='utf-8');head=index.split('<body>',1)[0]
  announcement=head+'<body><a href="index.html">← 课程目录</a><h1>课程公告</h1><p>当前可见公告页面快照</p><article>'+clean(target)+'</article></body></html>'
