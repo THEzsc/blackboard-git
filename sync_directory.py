@@ -44,8 +44,21 @@ def sync(source,destination):
   if sha(p)!=a['sha256'] or p.stat().st_size!=a['bytes']:raise ValueError('Invalid asset: '+a['path'])
  def plan(rel,data,kind,nodeid):
   k=rel.as_posix()
-  if k.casefold() in {x.casefold() for x in planned}:raise ValueError('Filename collision: '+k)
+  existing=next((x for x in planned if x.casefold()==k.casefold()),None)
+  if existing is not None:
+   prior,prior_kind,prior_node=planned[existing]
+   if kind=='attachment' and prior_kind==kind and prior_node==nodeid and prior==data:
+    return Path(existing) # API and embedded links can expose the same attachment twice.
+   if kind!='attachment':raise ValueError('Filename collision: '+k)
+   token=hashlib.sha256(data).hexdigest()[:12]
+   if prior_node!=nodeid:token+='-'+hashlib.sha256(str(nodeid).encode()).hexdigest()[:8]
+   rel=rel.with_name(name(rel.stem+' ['+token+']'+rel.suffix));k=rel.as_posix()
+   existing=next((x for x in planned if x.casefold()==k.casefold()),None)
+   if existing is not None:
+    if planned[existing]==(data,kind,nodeid):return Path(existing)
+    raise ValueError('Filename collision after disambiguation: '+k)
   planned[k]=(data,kind,nodeid)
+  return rel
  for n in m['nodes']:
   if n.get('type')=='resource/x-bb-folder':paths[n['id']]=folder(n['id']);continue
   parent=folder(n.get('parentId')); assets=n.get('files',[])
@@ -53,14 +66,14 @@ def sync(source,destination):
    original=re.sub(r'^_\d+_\d+-_\d+_\d+-','',Path(assets[0]).name)
    suffix=Path(original).suffix;display=name(n['title'])
    filename=display if suffix and display.lower().endswith(suffix.lower()) else display+suffix
-   rel=parent/filename;plan(rel,source_file(assets[0]).read_bytes(),'attachment',n['id']);mapping[assets[0]]=rel
+   rel=plan(parent/filename,source_file(assets[0]).read_bytes(),'attachment',n['id']);mapping[assets[0]]=rel
    paths[n['id']]=rel
   else:
    rel=parent/(name(n['title'])+'.html');paths[n['id']]=rel
-   for a in assets:
+   for a in sorted(set(assets)):
     filename=re.sub(r'^_\d+_\d+-_\d+_\d+-','',Path(a).name)
     assetrel=parent/name(n['title'])/name(filename)
-    plan(assetrel,source_file(a).read_bytes(),'attachment',n['id']);mapping[a]=assetrel
+    assetrel=plan(assetrel,source_file(a).read_bytes(),'attachment',n['id']);mapping[a]=assetrel
  for n in m['nodes']:
   mapping[n['page']]=paths[n['id']]
  mapping['index.html']=Path('.blackboard/index.html')
