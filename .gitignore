@@ -1,0 +1,23 @@
+# Generated applications and Python caches
+__pycache__/
+*.py[cod]
+*.app/
+.DS_Store
+
+# Private course exports and local session/configuration files
+*.zip
+*.pdf
+*.pptx
+*.docx
+*.xlsx
+*.prt.*
+.blackboard/
+Content/
+Announcements/
+ME270*/
+*manifest.json
+verification.json
+.env
+.env.*
+*cookies*
+*session*.json
