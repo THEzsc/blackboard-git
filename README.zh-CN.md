@@ -108,3 +108,5 @@ blackboard-git 是独立项目，与 Blackboard、Anthology 或浙江大学无�
 
 - `Incomplete export`：终端现在会显示具体阶段、条目 ID 和原因。没有公告的已识别课程页面可正常同步；登录页、权限错误、未知公告页面和附件下载失败仍会阻止不完整提交。
 - `不是 Git 仓库`：`git clone URL` 默认新建子目录，不会把当前目录直接变成仓库。建议明确目标：`git clone '课程链接' MyCourse`，完成后 `cd MyCourse` 再 `git pull`。只有当前目录为空时，才可用 `git clone '课程链接' .`；不要删除已有资料来腾空目录。
+
+遇到校区登录方式选择页时，工具自动进入已验证的 INTL ID 入口，每次运行最多尝试两次。密码、MFA 和账号选择仍由你在需要时完成。更新原生代码后，macOS 用户需要重新运行 `python3 setup.py` 编译。

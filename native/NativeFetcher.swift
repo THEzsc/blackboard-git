@@ -7,6 +7,7 @@ final class Fetcher: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WK
     var timer: Timer?
     var probing = false
     var exporting = false
+    var providerSelections = 0
     var total = 0
     var received = Set<String>()
     let args = CommandLine.arguments
@@ -40,6 +41,21 @@ final class Fetcher: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WK
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
         return nil
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard !exporting, providerSelections < 2, webView.url?.host == "learn.intl.zju.edu.cn",
+              let resource = Bundle.main.url(forResource: "login-provider", withExtension: "js"),
+              let selector = try? String(contentsOf: resource, encoding: .utf8) else { return }
+        webView.callAsyncJavaScript("return (\n" + selector + "\n);", arguments: [:], in: nil, in: .defaultClient) { result in
+            guard !self.exporting, self.providerSelections < 2,
+                  case .success(let value) = result,
+                  let target = value as? String,
+                  target == "https://learn.intl.zju.edu.cn/webapps/bb-zjdxsso-BBLEARN/index.jsp",
+                  let url = URL(string: target) else { return }
+            self.providerSelections += 1
+            self.log("Blackboard: selecting INTL ID automatically…")
+            webView.load(URLRequest(url: url))
+        }
     }
     func probe() {
         guard !probing, !exporting, web.url?.host == "learn.intl.zju.edu.cn", !web.isLoading else { return }

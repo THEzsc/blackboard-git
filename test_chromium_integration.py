@@ -17,12 +17,13 @@ class ChromiumIntegration(unittest.TestCase):
     def test_isolated_export_and_persistent_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache=Path(tmp)/'cache'; cache.mkdir()
-            observed=[]; contexts=[]
+            observed=[]; contexts=[]; selected=[]
             def launch(chromium, path):
                 context=launch_context(chromium,path,headless=True)
                 contexts.append(context)
                 def route(request):
                     url=urlsplit(request.request.url); path=url.path
+                    if path == '/webapps/bb-zjdxsso-BBLEARN/index.jsp':selected.append(path)
                     if url.hostname!='learn.intl.zju.edu.cn':
                         request.abort();return
                     if path.endswith('/attachments/_3_1/download'):
@@ -38,6 +39,8 @@ class ChromiumIntegration(unittest.TestCase):
                     else:
                         observed.append(request.request.headers.get('cookie',''))
                         body=EMPTY if attempt == 1 else '<html><body><ul id="announcementList"><li><h3>Test announcement</h3></li></ul></body></html>'
+                        if path.endswith('/modulepage/view'):
+                            body='<a id="intlid-login-link" class="intlid-link" href="https://zjuam.zju.edu.cn/cas/login">ZJU</a><a id="intlid-login-link" class="microsoft_login-link" href="https://learn.intl.zju.edu.cn/webapps/bb-zjdxsso-BBLEARN/index.jsp">INTL ID</a>'
                         request.fulfill(status=200,content_type='text/html',headers={'Set-Cookie':'fixture_session=retained; Max-Age=3600; Secure; HttpOnly; Path=/'},body=body);return
                     request.fulfill(status=200,content_type='application/json',body=json.dumps(value))
                 context.route('**/*',route)
@@ -49,6 +52,7 @@ class ChromiumIntegration(unittest.TestCase):
                     fetch(url,Path(tmp)/str(attempt),'_1234_1',exporter_script(),cache)
                 manifest=json.loads((Path(tmp)/str(attempt)/'manifest.json').read_text(encoding='utf-8'))
                 self.assertTrue(manifest['complete']);self.assertEqual(1,len(manifest['assets']))
+                self.assertEqual(attempt+1,len(selected))
                 if attempt==1:
                     self.assertIn('fixture_session=retained',observed[start])
                     announcement=(Path(tmp)/str(attempt)/'announcements-source.html').read_text(encoding='utf-8')

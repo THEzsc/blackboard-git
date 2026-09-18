@@ -144,3 +144,5 @@ blackboard-git is an independent project, not affiliated with Blackboard, Anthol
 
 - **Incomplete export:** the terminal reports the failing stage, item ID and reason. Recognized empty announcement views are valid; login, permission errors, unknown layouts and failed attachments still block incomplete commits.
 - **Not a Git repository:** `git clone URL` creates a child directory by default. Specify the destination (`git clone 'COURSE_URL' MyCourse`), then enter it before pulling. `git clone 'COURSE_URL' .` requires an empty current directory; preserve any existing personal materials.
+
+The supported campus login-provider chooser is recognized automatically: blackboard-git follows the verified INTL ID link (at most twice per run). Passwords, MFA and account selection remain interactive when required. macOS users should rerun `python3 setup.py` after updating native code.

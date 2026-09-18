@@ -120,6 +120,8 @@ def fetch(url, output, course, script, cache):
             deadline = time.monotonic() + 900
             client = context.new_cdp_session(page)
             world = None
+            provider_selections = 0
+            selector = (Path(__file__).parent/'login-provider.js').read_text(encoding='utf-8')
             while time.monotonic() < deadline:
                 if page.is_closed():
                     raise RuntimeError('Login window closed')
@@ -127,6 +129,13 @@ def fetch(url, output, course, script, cache):
                     try:
                         frame = client.send('Page.getFrameTree')['frameTree']['frame']['id']
                         world = client.send('Page.createIsolatedWorld', {'frameId': frame, 'worldName': 'blackboard-git'})['executionContextId']
+                        if provider_selections < 2:
+                            target = evaluate(client, world, selector)
+                            if target == 'https://learn.intl.zju.edu.cn/webapps/bb-zjdxsso-BBLEARN/index.jsp':
+                                provider_selections += 1
+                                print('Blackboard: selecting INTL ID automatically…', file=sys.stderr)
+                                page.goto(target, wait_until='domcontentloaded', timeout=60000)
+                                continue
                         probe = "fetch('/learn/api/public/v1/courses/' + " + json.dumps(course) + ",{credentials:'same-origin'}).then(r=>r.ok && (r.headers.get('content-type')||'').includes('json')).catch(()=>false)"
                         if evaluate(client, world, probe, True):
                             break
