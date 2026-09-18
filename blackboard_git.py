@@ -13,7 +13,7 @@ from sync_directory import sync
 META = '.blackboard/git-snapshot.json'
 
 def git(root, *args, check=True):
-    return subprocess.run(['git', '-C', str(root), *args], check=check, text=True, capture_output=True).stdout.strip()
+    return subprocess.run(['git', '-C', str(root), *args], check=check, text=True, encoding="utf-8", capture_output=True).stdout.strip()
 
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -31,12 +31,12 @@ def pull(source, destination):
     metadata = root / META
     if metadata.is_symlink() or (root / '.blackboard').is_symlink():
         raise ValueError('Refusing symlinked metadata')
-    old = json.loads(metadata.read_text()) if metadata.exists() else {}
+    old = json.loads(metadata.read_text(encoding='utf-8')) if metadata.exists() else {}
     # Render and validate the entire incoming snapshot before touching the destination.
     with tempfile.TemporaryDirectory(prefix='blackboard-git-') as temporary:
         with contextlib.redirect_stdout(io.StringIO()):
             sync(source, temporary)
-        incoming = json.loads((Path(temporary) / '.blackboard/sync-state.json').read_text())
+        incoming = json.loads((Path(temporary) / '.blackboard/sync-state.json').read_text(encoding='utf-8'))
     if old and old['courseId'] != incoming['courseId']:
         raise ValueError('Snapshot belongs to a different course')
     oldfiles = old.get('files', {})
@@ -58,7 +58,7 @@ def pull(source, destination):
         (root / rel).unlink()
     # Keep the local navigation page available in fresh clones without timestamp-only commits.
     index = root / '.blackboard/index.html'
-    index.write_text(re.sub(r'<p>源快照：.*?</p>', '', index.read_text(), count=1))
+    index.write_text(re.sub(r'<p>源快照：.*?</p>', '', index.read_text(encoding='utf-8'), count=1), encoding='utf-8')
     # Remove only obsolete managed folders and only when empty.
     for rel in sorted(set(old.get('nodes', {}).values()) - set(new['nodes'].values()), key=len, reverse=True):
         p = root / rel
@@ -72,12 +72,12 @@ def pull(source, destination):
     # Repository-local exclusions; personal files remain outside automated commits.
     exclude = root / '.git/info/exclude'
     rules = '\n# Blackboard generated metadata\n.DS_Store\n.blackboard/*\n!.blackboard/git-snapshot.json\n!.blackboard/index.html\n'
-    if '# Blackboard generated metadata' not in exclude.read_text():
+    if '# Blackboard generated metadata' not in exclude.read_text(encoding='utf-8'):
         with exclude.open('a') as f:
             f.write(rules)
-    if '!.blackboard/index.html' not in exclude.read_text():
+    if '!.blackboard/index.html' not in exclude.read_text(encoding='utf-8'):
         with exclude.open('a') as f: f.write('\n!.blackboard/index.html\n')
-    metadata.write_text(json.dumps(new, ensure_ascii=False, indent=2) + '\n')
+    metadata.write_text(json.dumps(new, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     managed = sorted(set(oldfiles) | set(new['files'])) + [META, '.blackboard/index.html']
     for i in range(0, len(managed), 100):
         git(root, 'add', '-A', '--', *managed[i:i + 100])

@@ -6,13 +6,19 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 -m unittest discover -v
+      - run: python -m pip install -r requirements-chromium.txt
+      - run: python -m unittest discover -v
+      - name: Synthetic browser export and persisted-session test
+        run: python -m unittest test_chromium_integration -v
+        env:
+          BLACKBOARD_BROWSER_TESTS: '1'
+          PYTHONUTF8: '1'
       - if: runner.os == 'macOS'
         run: python3 native/build.py

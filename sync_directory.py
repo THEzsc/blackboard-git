@@ -2,7 +2,7 @@
 No network, deletion or overwrite of unmanaged/locally modified files.
 Usage: python3 sync_directory.py SNAPSHOT DESTINATION
 """
-import argparse, hashlib, html, json, os, re, shutil, tempfile
+import argparse, hashlib, html, json, os, posixpath, re, shutil, tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, unquote
@@ -11,18 +11,21 @@ def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def name(s):
  s=str(s).replace('/', '／').replace(':','：').replace('\\','＼')
  s=re.sub(r'[\x00-\x1f]', '', s).strip()
+ if os.name == 'nt':
+  s=s.translate(str.maketrans('<>"|?*', '＜＞＂｜？＊')).rstrip('. ')
+  if re.match(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', s, re.I):s='_'+s
  if not s or s in ('.','..'):raise ValueError('Invalid display name')
  if len(s.encode())>240:raise ValueError('Display name too long: '+s)
  return s
 
 def sync(source,destination):
  source=Path(source).resolve(); dest=Path(destination).resolve();dest.mkdir(parents=True,exist_ok=True)
- m=json.loads((source/'manifest.json').read_text())
+ m=json.loads((source/'manifest.json').read_text(encoding='utf-8'))
  if not m.get('complete') or m.get('issues'):raise ValueError('Refusing incomplete snapshot')
  nodes={n['id']:n for n in m['nodes']};meta=dest/'.blackboard'
  if meta.is_symlink():raise ValueError('Metadata directory is a symlink')
  meta.mkdir(exist_ok=True)
- statepath=meta/'sync-state.json'; previous=json.loads(statepath.read_text()) if statepath.exists() else {}
+ statepath=meta/'sync-state.json'; previous=json.loads(statepath.read_text(encoding='utf-8')) if statepath.exists() else {}
  if previous and previous['courseId']!=m['courseId']:raise ValueError('Destination belongs to another course')
  old=previous.get('files',{}); paths={}; folders={};planned={};mapping={}
  def folder(id,seen=()):
@@ -66,19 +69,19 @@ def sync(source,destination):
   def link(match):
    u=urlsplit(html.unescape(match.group(2)))
    if u.scheme or u.netloc:return match.group(0)
-   key=os.path.normpath(str(Path(oldpath).parent/unquote(u.path)))
+   key=posixpath.normpath(posixpath.join(posixpath.dirname(oldpath), unquote(u.path)))
    target=mapping.get(key)
    if target is None:return match.group(0)
    if target in folders.values():target=Path('.blackboard/index.html')
-   return match.group(1)+'="'+html.escape(os.path.relpath(target,newpath.parent),quote=True)+'"'
+   return match.group(1)+'="'+html.escape(posixpath.relpath(target.as_posix(),newpath.parent.as_posix()),quote=True)+'"'
   return re.sub(r'(href|src)="([^"]*)"',link,text)
  for n in m['nodes']:
   rel=paths[n['id']]
   if n.get('type')=='resource/x-bb-folder':continue
   if rel.as_posix() not in planned:
-   plan(rel,rewrite(source_file(n['page']).read_text(),n['page'],rel).encode(),'description',n['id'])
+   plan(rel,rewrite(source_file(n['page']).read_text(encoding='utf-8'),n['page'],rel).encode(),'description',n['id'])
  if m.get('announcements'):
-  rel=mapping['announcements.html'];plan(rel,rewrite((source/'announcements.html').read_text(),'announcements.html',rel).encode(),'announcement',None)
+  rel=mapping['announcements.html'];plan(rel,rewrite((source/'announcements.html').read_text(encoding='utf-8'),'announcements.html',rel).encode(),'announcement',None)
  # Validate all paths before making any content changes.
  def checked(rel):
   p=dest/rel
@@ -119,9 +122,9 @@ def sync(source,destination):
  state={'courseId':m['courseId'],'snapshotAt':m.get('finishedAt'),'syncedAt':datetime.now(timezone.utc).isoformat(),'files':new,'previousPathsRetained':missing,'nodes':{k:v.as_posix() for k,v in paths.items()}}
  index='<!doctype html><meta charset="utf-8"><title>blackboard-git 课程目录</title><h1>'+html.escape(m['courseName'])+'</h1><p>源快照：'+html.escape(m.get('finishedAt',''))+'</p><ul>'
  for k in planned:index+='<li><a href="'+html.escape('../'+k,quote=True)+'">'+html.escape(k)+'</a></li>'
- (meta/'index.html').write_text(index+'</ul>')
- (meta/'source-manifest.json').write_text(json.dumps(m,ensure_ascii=False,indent=2))
- temp=statepath.with_suffix('.tmp');temp.write_text(json.dumps(state,ensure_ascii=False,indent=2));os.replace(temp,statepath)
+ (meta/'index.html').write_text(index+'</ul>', encoding='utf-8')
+ (meta/'source-manifest.json').write_text(json.dumps(m,ensure_ascii=False,indent=2), encoding='utf-8')
+ temp=statepath.with_suffix('.tmp');temp.write_text(json.dumps(state,ensure_ascii=False,indent=2), encoding='utf-8');os.replace(temp,statepath)
  print(json.dumps({'destination':str(dest),'snapshotAt':state['snapshotAt'],'folders':len(folders),'attachments':sum(v['kind']=='attachment' for v in new.values()),'written':written,'unchanged':skipped,'oldPathsRetained':missing},ensure_ascii=False))
 if __name__=='__main__':
  a=argparse.ArgumentParser();a.add_argument('source');a.add_argument('destination');x=a.parse_args();sync(x.source,x.destination)

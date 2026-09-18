@@ -21,3 +21,5 @@ verification.json
 .env.*
 *cookies*
 *session*.json
+.venv/
+chromium-profile/

@@ -1,0 +1,5 @@
+* text=auto
+git-remote-blackboard text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.yml text eol=lf

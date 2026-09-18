@@ -1,6 +1,5 @@
-"""Git remote transport backed by live Blackboard snapshots and persistent WebKit SSO."""
+"""Git remote transport backed by live Blackboard snapshots and platform-selected browser sessions."""
 import contextlib
-import fcntl
 import hashlib
 import io
 import json
@@ -14,10 +13,11 @@ import tempfile
 from urllib.parse import urlsplit, parse_qs
 from blackboard_git import pull, git
 from finalize_export import finalize
+from platform_support import backend, cache_root, session_lock
 
 ROOT = Path(__file__).resolve().parent
 HOST = 'learn.intl.zju.edu.cn'
-CACHE = Path(os.environ.get('BLACKBOARD_CACHE_DIR', str(Path.home()/'Library/Application Support/BlackboardGit'))).resolve()
+CACHE = cache_root()
 
 def parse_url(raw):
     if raw.startswith('blackboard::'): raw=raw[len('blackboard::'):]
@@ -32,7 +32,7 @@ def parse_url(raw):
     return course, f'https://{HOST}/webapps/blackboard/execute/modulepage/view?course_id={course}&mode=view'
 
 def exporter_script():
-    script=(ROOT/'export-course.js').read_text()
+    script=(ROOT/'export-course.js').read_text(encoding='utf-8')
     script=script.replace("const courseId = new URL(location.href).searchParams.get('course_id');", "const courseId = window.__blackboardCourseId;")
     script=script.replace("console.log('[Course Mirror]', s);", "window.webkit.messageHandlers.blackboardExport.postMessage({kind:'progress',text:s});")
     script=script.replace('    manifest.complete=!issues.length;', '''    try {
@@ -59,39 +59,43 @@ def refresh(raw):
     course,url=parse_url(raw)
     CACHE.mkdir(parents=True,exist_ok=True,mode=0o700)
     os.chmod(CACHE,0o700)
-    # WebKit shares one persistent profile. Serialize exports across all courses.
-    lock=(CACHE/'session.lock').open('a')
-    fcntl.flock(lock,fcntl.LOCK_EX)
-    repo=CACHE/course/'repository'; repo.parent.mkdir(parents=True,exist_ok=True)
-    try:
+    # Each backend shares one persistent profile. Serialize exports across courses.
+    with session_lock(CACHE/'session.lock'):
+        repo=CACHE/course/'repository'; repo.parent.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='export-',dir=repo.parent) as tmp:
             snapshot=Path(tmp)/'snapshot'
             fixture=os.environ.get('BLACKBOARD_OFFLINE_SNAPSHOT')
             if fixture:
                 print('Blackboard: OFFLINE snapshot mode; no online check.',file=sys.stderr)
                 snapshot=Path(fixture).resolve()
-                if json.loads((snapshot/'manifest.json').read_text())['courseId']!=course:
+                if json.loads((snapshot/'manifest.json').read_text(encoding='utf-8'))['courseId']!=course:
                     raise ValueError('Offline snapshot belongs to another course')
             else:
                 app=ROOT/'native/Blackboard Git.app/Contents/MacOS/BlackboardFetcher'
-                if not app.exists(): raise ValueError('Run python3 native/build.py first')
-                script=Path(tmp)/'export.js'; script.write_text(exporter_script())
+                if backend() == 'webkit' and not app.exists(): raise ValueError('Run python3 setup.py first')
+                script=Path(tmp)/'export.js'; script.write_text(exporter_script(), encoding='utf-8')
                 # The application has its own persistent WKWebsiteDataStore; no cookie extraction.
-                subprocess.run([str(app),url,str(snapshot),course,str(script)],check=True,stdout=sys.stderr,timeout=920)
+                if backend() == 'webkit':
+                    subprocess.run([str(app),url,str(snapshot),course,str(script)],check=True,stdout=sys.stderr,timeout=920)
+                else:
+                    from chromium_fetcher import fetch
+                    fetch(url,snapshot,course,script.read_text(encoding='utf-8'),CACHE)
                 with contextlib.redirect_stdout(sys.stderr):
                     finalize(snapshot,snapshot/'announcements-source.html',Path(tmp)/'verified.zip')
                 (snapshot/'announcements-source.html').unlink()
             # Restore the directory synchronizer's local bookkeeping if the cache was seeded by Git clone.
             stable=repo/'.blackboard/git-snapshot.json'
             state=repo/'.blackboard/sync-state.json'
-            if stable.exists() and not state.exists(): state.write_text(stable.read_text())
+            if stable.exists() and not state.exists(): state.write_text(stable.read_text(encoding='utf-8'), encoding='utf-8')
             with contextlib.redirect_stdout(sys.stderr): pull(snapshot,repo)
         return repo
-    finally:
-        lock.close()
 
 def helper():
     if len(sys.argv)!=3: raise ValueError('This helper is invoked by Git')
+    if os.name == 'nt':
+        import msvcrt
+        msvcrt.setmode(0, os.O_BINARY)
+        msvcrt.setmode(1, os.O_BINARY)
     raw=sys.argv[2]
     parse_url(raw)
     for key in ('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_PREFIX'):
@@ -112,7 +116,7 @@ def helper():
         elif command=='connect git-upload-pack':
             repo=refresh(raw)
             print('',flush=True)
-            os.execvp('git',['git','upload-pack',str(repo)])
+            raise SystemExit(subprocess.call(['git','upload-pack',str(repo)]))
         elif command.startswith('connect '):
             raise ValueError('Blackboard remote is read-only; pushing is unsupported')
         else:
